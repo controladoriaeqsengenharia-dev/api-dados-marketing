@@ -1,0 +1,22 @@
+[Unit]
+Description=API Instagram para Power BI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=api-bi
+Group=api-bi
+WorkingDirectory=/opt/api-bi-marketing
+ExecStart=/opt/api-bi-marketing/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8000 --no-access-log
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

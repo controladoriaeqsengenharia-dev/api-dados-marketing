@@ -95,3 +95,34 @@ class ConnectionTests(unittest.TestCase):
             with patch.dict(os.environ, dict(config, PGPORT=port), clear=True):
                 with self.assertRaises(HTTPException):
                     connect()
+
+
+class BearerOffsetTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+    def test_bearer(self):
+        for value, status in [('Bearer test-key', 200), ('bearer test-key', 200), ('Bearer wrong', 401), ('Basic test-key', 401)]:
+            self.assertEqual(self.client.get('/api/tables', headers={'Authorization': value}).status_code, status)
+    def test_offset_is_sent_to_database(self):
+        db = Database()
+        with patch('app.connect', return_value=db):
+            response = self.client.get('/api/data/instagram_daily_insights?offset=10000&limit=1&until_id=99999', headers={'Authorization': 'Bearer test-key'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(db.calls[-1][1], [0, 99999, 2, 10000])
+        self.assertIn('OFFSET %s', str(db.calls[-1][0]))
+        self.assertEqual(response.json()['next_offset'], 10001)
+    def test_empty_page(self):
+        db = Database()
+        original = db.execute
+        def execute(query, params=None):
+            if params is not None and not isinstance(query, str):
+                return Result([])
+            return original(query, params)
+        db.execute = execute
+        with patch('app.connect', return_value=db):
+            response = self.client.get('/api/data/instagram_daily_insights?api_key=test-key&offset=20000')
+        self.assertEqual(response.json()['data'], [])
+        self.assertIsNone(response.json()['next_offset'])
+    def test_invalid_pagination(self):
+        for query in ('offset=-1', 'offset=0&after_id=1'):
+            self.assertEqual(self.client.get('/api/data/instagram_daily_insights?api_key=test-key&' + query).status_code, 422)

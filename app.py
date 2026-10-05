@@ -23,13 +23,20 @@ app = FastAPI(title='Instagram BI API', version='1.0.0')
 
 
 def authenticate(
+    authorization: Annotated[str | None, Header()] = None,
     x_api_key: Annotated[str | None, Header()] = None,
     api_key: Annotated[str | None, Query()] = None,
 ):
     expected = os.getenv('API_TOKEN', '')
     if not expected or expected.startswith('SUBSTITUA_'):
         raise HTTPException(503, 'Configure API_TOKEN no servidor.')
-    supplied = x_api_key or api_key or ''
+    if authorization is not None:
+        scheme, _, bearer = authorization.partition(' ')
+        if scheme.lower() != 'bearer' or not bearer.strip():
+            raise HTTPException(401, 'Authorization deve usar Bearer token.')
+        supplied = bearer.strip()
+    else:
+        supplied = x_api_key or api_key or ''
     if not secrets.compare_digest(supplied.encode(), expected.encode()):
         raise HTTPException(401, 'Chave de API inválida.')
 
@@ -82,6 +89,7 @@ def data(
     after_id: Annotated[int, Query(ge=0)] = 0,
     until_id: Annotated[int | None, Query(ge=0)] = None,
     limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+    offset: Annotated[int | None, Query(ge=0)] = None,
     date_from: date | None = None,
     date_to: date | None = None,
 ):
@@ -89,6 +97,8 @@ def data(
         raise HTTPException(404, 'Tabela não permitida.')
     if date_from and date_to and date_from > date_to:
         raise HTTPException(422, 'date_from deve ser menor ou igual a date_to.')
+    if offset is not None and after_id != 0:
+        raise HTTPException(422, 'Use offset ou after_id, não ambos.')
     qualified = sql.Identifier('public', table)
     try:
         with connect() as conn:
@@ -110,8 +120,11 @@ def data(
                     clauses.append(sql.SQL('data_coleta ' + op + ' %s'))
                     params.append(value)
             params.append(limit + 1)
-            rows = conn.execute(sql.SQL('SELECT * FROM {} WHERE {} ORDER BY id LIMIT %s')
-                                .format(qualified, sql.SQL(' AND ').join(clauses)), params).fetchall()
+            query = sql.SQL('SELECT * FROM {} WHERE {} ORDER BY id LIMIT %s').format(qualified, sql.SQL(' AND ').join(clauses))
+            if offset is not None:
+                query += sql.SQL(' OFFSET %s')
+                params.append(offset)
+            rows = conn.execute(query, params).fetchall()
         has_more = len(rows) > limit
         rows = rows[:limit]
         next_id = str(rows[-1]['id']) if has_more else None
@@ -124,7 +137,8 @@ def data(
                     elif kind in ('json', 'jsonb'):
                         row[name] = json.dumps(row[name], default=encode, ensure_ascii=False)
         payload = {'table': table, 'columns': columns, 'data': rows,
-                   'next_after_id': next_id, 'until_id': str(until_id)}
+                   'next_after_id': next_id, 'until_id': str(until_id),
+                   'next_offset': (offset + limit if has_more else None) if offset is not None else None}
         return Response(json.dumps(payload, default=encode, ensure_ascii=False),
                         media_type='application/json', headers={'Cache-Control': 'no-store'})
     except psycopg.Error:

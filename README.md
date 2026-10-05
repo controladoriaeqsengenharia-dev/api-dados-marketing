@@ -87,7 +87,7 @@ sudo chmod 600 .env
 sudo cp deploy/api-bi-marketing.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now api-bi-marketing
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8001/health
 ```
 
 Nas atualizações, após o `git push` no computador, execute dentro da pasta do projeto na VPS:
@@ -104,7 +104,7 @@ O `.env` criado na VPS permanece local durante as atualizações. Em repositóri
 
 Para diagnosticar falhas: `sudo journalctl -u api-bi-marketing -n 100 --no-pager`.
 
-Configure Nginx/Caddy como proxy reverso para `127.0.0.1:8000`, com domínio e HTTPS, e use esse domínio na função M. Desative logs de query strings no proxy, pois `api_key` é enviado na URL. O serviço escuta apenas no loopback; o acesso externo depende desse proxy.
+O serviço escuta em `0.0.0.0:8001` para acesso externo. Libere TCP 8001 nos firewalls ativos da VPS e da Hostinger. Teste em http://187.127.14.158:8001/health e http://187.127.14.158:8001/docs. Para a conexão de produção com o Power BI, configure HTTPS com Nginx/Caddy e domínio, encaminhando para `127.0.0.1:8001`, e use a URL HTTPS na função M. Desative logs de query strings no proxy, pois `api_key` é enviado na URL.
 
 ## Executar testes
 
@@ -113,3 +113,18 @@ python -m unittest discover -s tests -v
 ```
 
 Testes usam banco simulado; conexão e compatibilidade com os dados reais precisam ser verificadas após configurar `.env`.
+
+
+## Query com Bearer e offset
+
+Use `powerbi-bearer.m` como consulta completa no Editor Avançado (não é função).
+Preencha `TokenAPI` com o API_TOKEN do .env e altere `NomeTabela` para cada uma das seis tabelas.
+Configure a credencial desta fonte como **Anônima**, pois o token é enviado pelo cabeçalho Authorization da query.
+Ela importa páginas de 10000 registros até retornar uma página vazia, com até cinco tentativas por página.
+Os nomes e tipos das colunas são obtidos da API, inclusive em tabela vazia.
+A query mantém until_id da primeira página. Alterações/exclusões durante a importação podem deslocar offsets;
+prefira importar fora do horário de alterações. Offsets altos podem custar mais que paginação por cursor.
+O endpoint aceita offset não negativo, sem combinar com after_id diferente de zero.
+A autenticação anterior e a função powerbi.m continuam disponíveis.
+Não salve tokens reais no Git. A consulta M precisa ser validada no Power BI.
+Após publicar o código no GitHub, atualize na VPS com git pull --ff-only e sudo systemctl restart api-bi-marketing.

@@ -8,7 +8,7 @@ Type=simple
 User=api-bi
 Group=api-bi
 WorkingDirectory=/opt/api-bi-marketing
-ExecStart=/opt/api-bi-marketing/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8000 --no-access-log
+ExecStart=/opt/api-bi-marketing/.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8001 --no-access-log
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONDONTWRITEBYTECODE=1

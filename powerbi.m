@@ -3,7 +3,7 @@
 (Tabela as text, optional DataInicial as nullable date, optional DataFinal as nullable date) as table =>
 let
     GetPage = (Cursor as text, optional Teto as nullable text) as record =>
-        Json.Document(Web.Contents("http://localhost:8000", [
+        Json.Document(Web.Contents("http://187.127.14.158:8001", [
             RelativePath = "api/data/" & Tabela,
             ApiKeyName = "api_key",
             Query = Record.Combine({
